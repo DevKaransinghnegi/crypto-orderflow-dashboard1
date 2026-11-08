@@ -33,6 +33,7 @@
             border-radius: 10px;
             margin-bottom: 20px;
             border: 1px solid var(--border-color);
+            gap: 15px;
         }
 
         .controls {
@@ -42,6 +43,14 @@
             flex-wrap: wrap;
         }
 
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 12px;
+            color: #848e9c;
+        }
+
         select, input {
             background: #2b313a;
             color: white;
@@ -49,6 +58,11 @@
             padding: 8px 12px;
             border-radius: 5px;
             font-size: 14px;
+            outline: none;
+        }
+
+        select:focus, input:focus {
+            border-color: var(--whale-color);
         }
 
         .grid {
@@ -113,13 +127,28 @@
 <body>
 
     <div class="header">
-        <h2>⚡ Order Flow Visualizer</h2>
+        <h2>⚡ <span id="activePairTitle">BTCUSDT</span> Order Flow Visualizer</h2>
+        
         <div class="controls">
-            <label>CSV Log File:
+            <!-- 1. Trading Symbol Input -->
+            <div class="input-group">
+                <label for="symbolInput">Trading Pair</label>
+                <input type="text" id="symbolInput" value="BTCUSDT" placeholder="e.g. SOLUSDT, BTCUSDT" onchange="onSymbolOrThresholdChange()">
+            </div>
+
+            <!-- 2. Whale Threshold Input -->
+            <div class="input-group">
+                <label for="thresholdInput">Whale Threshold Size</label>
+                <input type="number" id="thresholdInput" value="0.1" step="0.01" min="0" onchange="onSymbolOrThresholdChange()">
+            </div>
+
+            <!-- 3. CSV File Selector Dropdown -->
+            <div class="input-group">
+                <label for="fileDropdown">Select CSV File</label>
                 <select id="fileDropdown" onchange="loadSelectedFile()">
                     <option value="">Loading files...</option>
                 </select>
-            </label>
+            </div>
         </div>
     </div>
 
@@ -137,7 +166,7 @@
 
         <!-- Whale Column -->
         <div>
-            <div class="section-title">🐋 Whale Section</div>
+            <div class="section-title">🐋 Whale Section (<span id="whaleThresholdLabel">>= 0.1</span>)</div>
             <div class="summary-cards">
                 <div class="card whale-buy" id="whaleBuySummary">🟢 Buy Total: Loading...</div>
                 <div class="card whale-sell" id="whaleSellSummary">🔴 Sell Total: Loading...</div>
@@ -149,10 +178,11 @@
 
     <script>
         const REPO_OWNER = "DevKaransinghnegi";
-        const REPO_NAME = "crypto-order-flow-dashboard-1";
+        const REPO_NAME = "crypto-orderflow-dashboard1";
         const LOGS_FOLDER = "logs";
 
         let autoRefreshInterval = null;
+        let cachedCSVText = "";
 
         async function fetchFileList() {
             try {
@@ -163,9 +193,17 @@
                 const dropdown = document.getElementById("fileDropdown");
                 dropdown.innerHTML = "";
                 
-                const csvFiles = files.filter(f => f.name.endsWith(".csv")).reverse();
+                const currentSymbol = document.getElementById("symbolInput").value.trim().toUpperCase();
+                
+                // Filter files by symbol if matching, or show all CSVs
+                let csvFiles = files.filter(f => f.name.endsWith(".csv")).reverse();
+                const symbolMatches = csvFiles.filter(f => f.name.toUpperCase().startsWith(currentSymbol));
+                if (symbolMatches.length > 0) {
+                    csvFiles = symbolMatches;
+                }
+
                 if (csvFiles.length === 0) {
-                    dropdown.innerHTML = "<option>No CSV logs found</option>";
+                    dropdown.innerHTML = "<option value=''>No CSV logs found for " + currentSymbol + "</option>";
                     return;
                 }
 
@@ -182,6 +220,17 @@
             }
         }
 
+        function onSymbolOrThresholdChange() {
+            const currentSymbol = document.getElementById("symbolInput").value.trim().toUpperCase();
+            const threshold = document.getElementById("thresholdInput").value;
+            
+            document.getElementById("activePairTitle").innerText = currentSymbol;
+            document.getElementById("whaleThresholdLabel").innerText = ">= " + threshold;
+
+            // Re-fetch file list when symbol changes
+            fetchFileList();
+        }
+
         async function loadSelectedFile() {
             const dropdown = document.getElementById("fileDropdown");
             const fileUrl = dropdown.value;
@@ -191,7 +240,7 @@
 
             await parseAndRenderCSV(fileUrl);
 
-            // Auto refresh every 5 seconds if live file selected
+            // Auto refresh every 5 seconds if LIVE active file is selected
             if (dropdown.selectedIndex === 0) {
                 autoRefreshInterval = setInterval(() => parseAndRenderCSV(fileUrl), 5000);
             }
@@ -200,13 +249,14 @@
         async function parseAndRenderCSV(url) {
             try {
                 const res = await fetch(url + "?t=" + new Date().getTime());
-                const csvText = await res.text();
+                cachedCSVText = await res.text();
 
-                const lines = csvText.trim().split("\n");
+                const lines = cachedCSVText.trim().split("
+");
                 if (lines.length <= 1) return;
 
-                const headers = lines[0].split(",");
-                
+                const threshold = parseFloat(document.getElementById("thresholdInput").value) || 0.1;
+
                 const boxes = {};
                 const summary = {
                     r_buy_cnt: 0, r_buy_vol: 0, r_buy_usdt: 0,
@@ -222,10 +272,12 @@
                     const price = parseFloat(parts[1]);
                     const size = parseFloat(parts[2]);
                     const side = parts[3].trim().toLowerCase();
-                    const category = parts[4].trim();
                     const usdt_val = parseFloat(parts[5]);
 
-                    const price_key = price.toFixed(1);
+                    // Dynamic threshold evaluation on the front-end
+                    const category = size >= threshold ? "Whale" : "Retail";
+
+                    const price_key = price < 10 ? price.toFixed(2) : price.toFixed(1);
                     const box_id = `${price_key}_${side}_${category}`;
 
                     if (!boxes[box_id]) {
