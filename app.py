@@ -18,9 +18,9 @@ ROTATE_MINUTES = 15
 WHALE_THRESHOLD = 0.1  # Default threshold (e.g., 0.1 BTC for BTCUSDT)
 
 # GitHub Config (Aapke diye gaye credentials)
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "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")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "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")
 REPO_OWNER = os.environ.get("REPO_OWNER", "DevKaransinghnegi")
-REPO_NAME = os.environ.get("REPO_NAME", "assingment")
+REPO_NAME = os.environ.get("REPO_NAME", "crypto-orderflow-dashboard1")
 
 if not os.path.exists(SAVE_FOLDER):
     os.makedirs(SAVE_FOLDER)
