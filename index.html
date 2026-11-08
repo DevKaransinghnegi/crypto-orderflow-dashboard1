@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Order Flow Dashboard</title>
+    <style>
+        :root {
+            --bg-color: #0b0e11;
+            --card-bg: #1e2329;
+            --text-color: #eaecef;
+            --buy-color: #0ecb81;
+            --sell-color: #f6465d;
+            --whale-color: #3861fb;
+            --border-color: #2b313a;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 15px;
+        }
+
+        .header {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--card-bg);
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        select, input {
+            background: #2b313a;
+            color: white;
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .card {
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+
+        .card.retail-buy { background: rgba(14, 203, 129, 0.15); border: 1px solid var(--buy-color); }
+        .card.retail-sell { background: rgba(246, 70, 93, 0.15); border: 1px solid var(--sell-color); }
+        .card.whale-buy { background: rgba(56, 97, 251, 0.15); border: 1px solid var(--whale-color); }
+        .card.whale-sell { background: rgba(153, 0, 153, 0.15); border: 1px solid #990099; }
+
+        .box-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .box-item {
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            font-size: 13px;
+        }
+
+        .box-item.buy { background: rgba(14, 203, 129, 0.08); border-left: 4px solid var(--buy-color); }
+        .box-item.sell { background: rgba(246, 70, 93, 0.08); border-left: 4px solid var(--sell-color); }
+        .box-item.whale-box { border-left: 4px solid var(--whale-color); }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2>⚡ Order Flow Visualizer</h2>
+        <div class="controls">
+            <label>CSV Log File:
+                <select id="fileDropdown" onchange="loadSelectedFile()">
+                    <option value="">Loading files...</option>
+                </select>
+            </label>
+        </div>
+    </div>
+
+    <div class="grid">
+        <!-- Retailer Column -->
+        <div>
+            <div class="section-title">🛍️ Retailer Section</div>
+            <div class="summary-cards">
+                <div class="card retail-buy" id="retailBuySummary">🟢 Buy Total: Loading...</div>
+                <div class="card retail-sell" id="retailSellSummary">🔴 Sell Total: Loading...</div>
+            </div>
+            <h4>Price Breakdown Boxes</h4>
+            <div class="box-list" id="retailBoxes">Waiting for retailer trades...</div>
+        </div>
+
+        <!-- Whale Column -->
+        <div>
+            <div class="section-title">🐋 Whale Section</div>
+            <div class="summary-cards">
+                <div class="card whale-buy" id="whaleBuySummary">🟢 Buy Total: Loading...</div>
+                <div class="card whale-sell" id="whaleSellSummary">🔴 Sell Total: Loading...</div>
+            </div>
+            <h4>Price Breakdown Boxes</h4>
+            <div class="box-list" id="whaleBoxes">Waiting for whale trades...</div>
+        </div>
+    </div>
+
+    <script>
+        const REPO_OWNER = "DevKaransinghnegi";
+        const REPO_NAME = "crypto-order-flow-dashboard-1";
+        const LOGS_FOLDER = "logs";
+
+        let autoRefreshInterval = null;
+
+        async function fetchFileList() {
+            try {
+                const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${LOGS_FOLDER}`);
+                if (!response.ok) throw new Error("Failed to fetch logs directory");
+                const files = await response.json();
+                
+                const dropdown = document.getElementById("fileDropdown");
+                dropdown.innerHTML = "";
+                
+                const csvFiles = files.filter(f => f.name.endsWith(".csv")).reverse();
+                if (csvFiles.length === 0) {
+                    dropdown.innerHTML = "<option>No CSV logs found</option>";
+                    return;
+                }
+
+                csvFiles.forEach((file, index) => {
+                    const opt = document.createElement("option");
+                    opt.value = file.download_url;
+                    opt.textContent = file.name + (index === 0 ? " (LIVE)" : "");
+                    dropdown.appendChild(opt);
+                });
+
+                loadSelectedFile();
+            } catch (err) {
+                console.error("Error fetching file list:", err);
+            }
+        }
+
+        async function loadSelectedFile() {
+            const dropdown = document.getElementById("fileDropdown");
+            const fileUrl = dropdown.value;
+            if (!fileUrl) return;
+
+            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+
+            await parseAndRenderCSV(fileUrl);
+
+            // Auto refresh every 5 seconds if live file selected
+            if (dropdown.selectedIndex === 0) {
+                autoRefreshInterval = setInterval(() => parseAndRenderCSV(fileUrl), 5000);
+            }
+        }
+
+        async function parseAndRenderCSV(url) {
+            try {
+                const res = await fetch(url + "?t=" + new Date().getTime());
+                const csvText = await res.text();
+
+                const lines = csvText.trim().split("\n");
+                if (lines.length <= 1) return;
+
+                const headers = lines[0].split(",");
+                
+                const boxes = {};
+                const summary = {
+                    r_buy_cnt: 0, r_buy_vol: 0, r_buy_usdt: 0,
+                    r_sell_cnt: 0, r_sell_vol: 0, r_sell_usdt: 0,
+                    w_buy_cnt: 0, w_buy_vol: 0, w_buy_usdt: 0,
+                    w_sell_cnt: 0, w_sell_vol: 0, w_sell_usdt: 0
+                };
+
+                for (let i = 1; i < lines.length; i++) {
+                    const parts = lines[i].split(",");
+                    if (parts.length < 6) continue;
+
+                    const price = parseFloat(parts[1]);
+                    const size = parseFloat(parts[2]);
+                    const side = parts[3].trim().toLowerCase();
+                    const category = parts[4].trim();
+                    const usdt_val = parseFloat(parts[5]);
+
+                    const price_key = price.toFixed(1);
+                    const box_id = `${price_key}_${side}_${category}`;
+
+                    if (!boxes[box_id]) {
+                        boxes[box_id] = { price: price_key, side, category, count: 0, vol: 0, usdt: 0 };
+                    }
+
+                    boxes[box_id].count += 1;
+                    boxes[box_id].vol += size;
+                    boxes[box_id].usdt += usdt_val;
+
+                    if (category === "Whale") {
+                        if (side === "buy") { summary.w_buy_cnt++; summary.w_buy_vol += size; summary.w_buy_usdt += usdt_val; }
+                        else { summary.w_sell_cnt++; summary.w_sell_vol += size; summary.w_sell_usdt += usdt_val; }
+                    } else {
+                        if (side === "buy") { summary.r_buy_cnt++; summary.r_buy_vol += size; summary.r_buy_usdt += usdt_val; }
+                        else { summary.r_sell_cnt++; summary.r_sell_vol += size; summary.r_sell_usdt += usdt_val; }
+                    }
+                }
+
+                renderUI(summary, boxes);
+
+            } catch (err) {
+                console.error("Error reading CSV:", err);
+            }
+        }
+
+        function renderUI(s, boxes) {
+            document.getElementById("retailBuySummary").innerHTML = `<b>🟢 Retail BUY</b><br>Orders: ${s.r_buy_cnt}<br>Vol: ${s.r_buy_vol.toFixed(3)}<br>Value: $${s.r_buy_usdt.toLocaleString('en-US', {maximumFractionDigits:2})}`;
+            document.getElementById("retailSellSummary").innerHTML = `<b>🔴 Retail SELL</b><br>Orders: ${s.r_sell_cnt}<br>Vol: ${s.r_sell_vol.toFixed(3)}<br>Value: $${s.r_sell_usdt.toLocaleString('en-US', {maximumFractionDigits:2})}`;
+            
+            document.getElementById("whaleBuySummary").innerHTML = `<b>🟢 Whale BUY</b><br>Orders: ${s.w_buy_cnt}<br>Vol: ${s.w_buy_vol.toFixed(3)}<br>Value: $${s.w_buy_usdt.toLocaleString('en-US', {maximumFractionDigits:2})}`;
+            document.getElementById("whaleSellSummary").innerHTML = `<b>🔴 Whale SELL</b><br>Orders: ${s.w_sell_cnt}<br>Vol: ${s.w_sell_vol.toFixed(3)}<br>Value: $${s.w_sell_usdt.toLocaleString('en-US', {maximumFractionDigits:2})}`;
+
+            const retailList = document.getElementById("retailBoxes");
+            const whaleList = document.getElementById("whaleBoxes");
+
+            retailList.innerHTML = "";
+            whaleList.innerHTML = "";
+
+            const sortedKeys = Object.keys(boxes).sort((a,b) => parseFloat(boxes[b].price) - parseFloat(boxes[a].price));
+
+            sortedKeys.forEach(k => {
+                const b = boxes[k];
+                const div = document.createElement("div");
+                div.className = `box-item ${b.side} ${b.category === 'Whale' ? 'whale-box' : ''}`;
+                div.innerHTML = `<b>Price:</b> $${b.price} | <b>Side:</b> ${b.side.toUpperCase()}<br><b>Orders:</b> ${b.count} | <b>Vol:</b> ${b.vol.toFixed(3)} | <b>USDT:</b> $${b.usdt.toLocaleString('en-US', {maximumFractionDigits:2})}`;
+
+                if (b.category === "Whale") whaleList.appendChild(div);
+                else retailList.appendChild(div);
+            });
+        }
+
+        fetchFileList();
+    </script>
+</body>
+</html>
